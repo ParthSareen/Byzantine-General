@@ -2,7 +2,8 @@
 #include "general.h"
 
 // add any #includes here
-
+#include <stdlib.h>
+#include <stdio.h>
 // add any #defines here
 
 // add global variables here
