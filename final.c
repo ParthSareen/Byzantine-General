@@ -10,7 +10,8 @@ typedef struct {
 	uint8_t sender;
 } test_t;
 
-bool loyal0[] = { true, true, false };
+// bool loyal0[] = { true, true, false };
+bool loyal0[] = {true, true};
 bool loyal1[] = { true, false, true, true };
 bool loyal2[] = { true, false, true, true };
 bool loyal3[] = { true, false, true, true, false, true, true };
@@ -49,10 +50,13 @@ void testCases(void *arguments) {
 	for(int i=0; i<N_TEST; i++) {
 		printf("\ntest case %d\n", i);
 		if(setup(tests[i].n, tests[i].loyal, tests[i].reporter)) {
-			startGenerals(tests[i].n);
 			broadcast(tests[i].command, tests[i].sender);
+			startGenerals(tests[i].n);
+			//broadcast(tests[i].command, tests[i].sender);
+			osDelay(1000);
 			cleanup();
 			stopGenerals();
+			
 		} else {
 			printf(" setup failed\n");
 		}

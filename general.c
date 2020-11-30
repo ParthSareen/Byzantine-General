@@ -14,6 +14,9 @@
 // add global variables here
 // osMessageQueueId_t commandQueue[MAX_GENERALS];
 osMessageQueueId_t* commandQueue;
+int total_generals;
+osMutexId_t printMutex;
+osSemaphoreId_t sem;
 
 /** Record parameters and set up any OS and other resources
   * needed by your general() and broadcast() functions.
@@ -23,11 +26,14 @@ osMessageQueueId_t* commandQueue;
   * return true if setup successful and n > 3*m, false otherwise
   */
 bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
-	commandQueue = (osMessageQueueId_t*)malloc(QUEUE_SIZE*sizeof(uint8_t));
+	total_generals = nGeneral;
+	// size could be 2 i think
+	commandQueue = (osMessageQueueId_t*)malloc(MAX_GENERALS*sizeof(uint8_t));
+	if (commandQueue == NULL){
+		printf("malloc for command queue failed");
+		return false;
+	}
 	// TODO: check if we need to have queue for commander
-	// char msg = 'A';
-	// char* rcvd_msg;
-	// uint32_t rcvd_msg;
 	for (int i; i<nGeneral; ++i){
 		commandQueue[i] = osMessageQueueNew(QUEUE_SIZE, sizeof(uint32_t), NULL);
 		printf("Q%i\n", i);
@@ -43,9 +49,19 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
   * dynamically allocated by setup().
   */
 void cleanup(void) {
+	free(commandQueue);
 }
 
 
+void checkStatus(osStatus_t status, int numGeneral){
+	osMutexAcquire(printMutex, osWaitForever);
+	if (status == osOK);
+	else if (status == osErrorResource)
+		printf("Overflow occured for queue %i\n", numGeneral);
+	else
+		printf("Unkown status for queue %i\n", numGeneral);
+	osMutexRelease(printMutex);
+}
 /** This function performs the initial broadcast to n-1 generals.
   * It should wait for the generals to finish before returning.
   * Note that the general sending the command does not participate
@@ -54,7 +70,18 @@ void cleanup(void) {
   * sender: general sending the command to other n-1 generals
   */
 void broadcast(char command, uint8_t sender) {
-	
+	for (int numGeneral; numGeneral<total_generals; numGeneral++){
+		osStatus_t status = osMessageQueuePut(commandQueue[0], &command, MSG_PRIO, TIMEOUT);
+		checkStatus(status, numGeneral);
+		osMutexAcquire(printMutex, osWaitForever);
+		printf("done puts for general %i, msg: %s\n", numGeneral, &command);
+		//osDelay(5);
+		osMutexRelease(printMutex);
+	}
+	osMutexAcquire(printMutex, osWaitForever);
+	uint16_t count = osMessageQueueGetCount(commandQueue[0]);
+	printf("queue size, %i", count);
+	osMutexRelease(printMutex);
 }
 
 
@@ -67,4 +94,30 @@ void broadcast(char command, uint8_t sender) {
   */
 void general(void *idPtr) {
 	uint8_t id = *(uint8_t *)idPtr;
+	char* rcvd_msg;
+	while(1){
+		osStatus_t status = osMessageQueueGet(commandQueue[id], rcvd_msg, NULL, osWaitForever);
+		osSemaphoreAcquire(sem, osWaitForever);
+		uint16_t count = osMessageQueueGetCount(commandQueue[0]);
+		printf("queue size for %d, %i\n", id, count);
+		
+		printf("msg: %s\n", rcvd_msg);
+		osSemaphoreRelease(sem);
+		/*
+		// checkStatus(status, id);
+		osMutexAcquire(printMutex, osWaitForever);
+		uint16_t count = osMessageQueueGetCount(commandQueue[0]);
+		printf("queue size, %i", count);
+		osMutexRelease(printMutex);
+		osMutexAcquire(printMutex, osWaitForever);
+		if (status == osOK)
+			printf("General %i received %s\n", id, rcvd_msg);
+		else if(status == osErrorResource)
+			printf("resource error\n");
+		//else if(status == osErrorParameter)
+			//printf("param error\n");
+		osDelay(100);
+		osMutexRelease(printMutex);
+		*/
+	}
 }
