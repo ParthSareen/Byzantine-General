@@ -4,10 +4,16 @@
 // add any #includes here
 #include <stdlib.h>
 #include <stdio.h>
+
 // add any #defines here
+#define MAX_GENERALS 7
+#define QUEUE_SIZE 10
+#define MSG_PRIO 0
+#define TIMEOUT 0
 
 // add global variables here
-
+// osMessageQueueId_t commandQueue[MAX_GENERALS];
+osMessageQueueId_t* commandQueue;
 
 /** Record parameters and set up any OS and other resources
   * needed by your general() and broadcast() functions.
@@ -17,7 +23,19 @@
   * return true if setup successful and n > 3*m, false otherwise
   */
 bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
-	return true;
+	commandQueue = (osMessageQueueId_t*)malloc(QUEUE_SIZE*sizeof(uint8_t));
+	// TODO: check if we need to have queue for commander
+	// char msg = 'A';
+	// char* rcvd_msg;
+	// uint32_t rcvd_msg;
+	for (int i; i<nGeneral; ++i){
+		commandQueue[i] = osMessageQueueNew(QUEUE_SIZE, sizeof(uint32_t), NULL);
+		printf("Q%i\n", i);
+	}
+	// osMessageQueuePut(commandQueue[0], &msg, MSG_PRIO, TIMEOUT);
+	// osMessageQueueGet(commandQueue[0], rcvd_msg, NULL, osWaitForever);
+	// printf("%s\n", rcvd_msg);
+	return true; 
 }
 
 
@@ -35,7 +53,8 @@ void cleanup(void) {
   * command: either 'A' or 'R'
   * sender: general sending the command to other n-1 generals
   */
-void broadcast(char command, uint8_t commander) {
+void broadcast(char command, uint8_t sender) {
+	
 }
 
 
