@@ -4,6 +4,7 @@
 // add any #includes here
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 // add any #defines here
 #define MAX_GENERALS 7
@@ -12,9 +13,9 @@
 #define TIMEOUT 0
 
 // add global variables here
-// osMessageQueueId_t commandQueue[MAX_GENERALS];
 osMessageQueueId_t* commandQueue;
-int total_generals;
+uint8_t total_generals;
+uint8_t reporterGeneral;
 osMutexId_t printMutex;
 osSemaphoreId_t sem;
 
@@ -27,7 +28,8 @@ osSemaphoreId_t sem;
   */
 bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	total_generals = nGeneral;
-	// size could be 2 i think
+	reporterGeneral = reporter;
+	// TODO: check if size could be 2
 	commandQueue = (osMessageQueueId_t*)malloc(MAX_GENERALS*sizeof(uint8_t));
 	if (commandQueue == NULL){
 		printf("malloc for command queue failed");
@@ -36,11 +38,8 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	// TODO: check if we need to have queue for commander
 	for (int i; i<nGeneral; ++i){
 		commandQueue[i] = osMessageQueueNew(QUEUE_SIZE, sizeof(uint32_t), NULL);
-		printf("Q%i\n", i);
+		//printf("Q%i\n", i);
 	}
-	// osMessageQueuePut(commandQueue[0], &msg, MSG_PRIO, TIMEOUT);
-	// osMessageQueueGet(commandQueue[0], rcvd_msg, NULL, osWaitForever);
-	// printf("%s\n", rcvd_msg);
 	return true; 
 }
 
@@ -71,19 +70,49 @@ void checkStatus(osStatus_t status, int numGeneral){
   */
 void broadcast(char command, uint8_t sender) {
 	for (int numGeneral; numGeneral<total_generals; numGeneral++){
-		osStatus_t status = osMessageQueuePut(commandQueue[0], &command, MSG_PRIO, TIMEOUT);
-		checkStatus(status, numGeneral);
-		osMutexAcquire(printMutex, osWaitForever);
-		printf("done puts for general %i, msg: %s\n", numGeneral, &command);
-		//osDelay(5);
-		osMutexRelease(printMutex);
+		if (numGeneral != sender){
+			osStatus_t status = osMessageQueuePut(commandQueue[numGeneral], &command, MSG_PRIO, TIMEOUT);
+			checkStatus(status, numGeneral);
+			osMutexAcquire(printMutex, osWaitForever);
+			osMutexRelease(printMutex);
+		}
 	}
-	osMutexAcquire(printMutex, osWaitForever);
-	uint16_t count = osMessageQueueGetCount(commandQueue[0]);
-	printf("queue size, %i", count);
-	osMutexRelease(printMutex);
 }
 
+int checkMessage(char* msg, int* doNotSend){
+	// TODO: check the max size of the array
+	//printf("msg: %s\n", msg);
+	// int doNotSend[MAX_GENERALS];
+	int lastNum = 0;
+	int msgLength = sizeof(msg)/sizeof(msg[0])+1;
+	//printf("length: %i\n", msgLength);
+	for (int charNum = 0; charNum < msgLength; charNum++){
+		if (msg[charNum] >= '0' && msg[charNum] <= '9'){
+			//printf("converted %c", msg[charNum]);
+			doNotSend[lastNum] = msg[charNum] - '0';
+			lastNum++;
+		}
+	}
+	
+	// printf("done conversion");
+	return lastNum;
+}
+
+void sendMessage(char msg, uint8_t targetId){
+	osStatus_t status = osMessageQueuePut(commandQueue[targetId], &msg, MSG_PRIO, TIMEOUT);
+	checkStatus(status, targetId);
+}
+
+void createMessage(char* msg, int curGeneral){
+	char strGeneral[1];
+	sprintf(strGeneral, "%d", curGeneral);
+	// 3 - 1 general 1 colon 1 null
+	char* newMsg = malloc(strlen(msg)+3);
+	strcpy(newMsg, strGeneral);
+	strcat(newMsg, ":");
+	strcat(newMsg, msg);
+	printf("msg created: %s", newMsg);
+}
 
 /** Generals are created before each test and deleted after each
   * test.  The function should wait for a value from broadcast()
@@ -94,30 +123,37 @@ void broadcast(char command, uint8_t sender) {
   */
 void general(void *idPtr) {
 	uint8_t id = *(uint8_t *)idPtr;
-	char* rcvd_msg;
+	// superloop for thread
 	while(1){
-		osStatus_t status = osMessageQueueGet(commandQueue[id], rcvd_msg, NULL, osWaitForever);
-		osSemaphoreAcquire(sem, osWaitForever);
-		uint16_t count = osMessageQueueGetCount(commandQueue[0]);
-		printf("queue size for %d, %i\n", id, count);
-		
-		printf("msg: %s\n", rcvd_msg);
-		osSemaphoreRelease(sem);
-		/*
-		// checkStatus(status, id);
-		osMutexAcquire(printMutex, osWaitForever);
-		uint16_t count = osMessageQueueGetCount(commandQueue[0]);
-		printf("queue size, %i", count);
-		osMutexRelease(printMutex);
-		osMutexAcquire(printMutex, osWaitForever);
-		if (status == osOK)
-			printf("General %i received %s\n", id, rcvd_msg);
-		else if(status == osErrorResource)
-			printf("resource error\n");
-		//else if(status == osErrorParameter)
-			//printf("param error\n");
-		osDelay(100);
-		osMutexRelease(printMutex);
-		*/
+		if (id == 1){ 
+			char rcvd_msg;
+			osStatus_t status = osMessageQueueGet(commandQueue[id], &rcvd_msg, NULL, osWaitForever);
+			
+			if (status == osOK){
+				printf("os ok\n");
+				int* doNotSend = (int*)malloc(MAX_GENERALS*sizeof(uint16_t));
+				int doNotSendSize = checkMessage(&rcvd_msg, doNotSend);
+				
+				for (int numGeneral = 0; numGeneral < total_generals; ++numGeneral){
+					bool found = false;
+					if (numGeneral == id)
+						found = true;
+					
+					uint16_t i = 0;
+					while (!found && i < doNotSendSize){
+						if (numGeneral == doNotSend[i])
+							found = true;
+						i++;
+					}
+					
+					if (!found){
+						createMessage(&rcvd_msg, numGeneral);
+						sendMessage(rcvd_msg, numGeneral);
+						printf("sending msg, id:%i\n", numGeneral);
+					}
+				}
+				
+			}
+		}
 	}
 }
