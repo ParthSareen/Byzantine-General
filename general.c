@@ -17,7 +17,8 @@ osMessageQueueId_t* commandQueue;
 uint8_t total_generals;
 uint8_t reporterGeneral;
 osMutexId_t printMutex;
-osSemaphoreId_t sem;
+osMutexId_t sendMutex;
+char* answerArray[100];
 
 /** Record parameters and set up any OS and other resources
   * needed by your general() and broadcast() functions.
@@ -29,6 +30,15 @@ osSemaphoreId_t sem;
 bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	total_generals = nGeneral;
 	reporterGeneral = reporter;
+	int numTraitors = 0;
+	// naive count
+	for (int i = 0; i< total_generals; ++i)
+		if (!loyal[i])
+			numTraitors++;
+	c_assert(total_generals>3*numTraitors);
+	if (!(total_generals>3*numTraitors))
+		return false;
+		
 	// TODO: check if size could be 2
 	commandQueue = (osMessageQueueId_t*)malloc(MAX_GENERALS*sizeof(uint8_t));
 	if (commandQueue == NULL){
@@ -38,7 +48,7 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	// TODO: check if we need to have queue for commander
 	for (int i; i<nGeneral; ++i){
 		commandQueue[i] = osMessageQueueNew(QUEUE_SIZE, sizeof(uint32_t), NULL);
-		//printf("Q%i\n", i);
+		printf("Q%i\n", i);
 	}
 	return true; 
 }
@@ -56,15 +66,24 @@ void checkStatus(osStatus_t status, int numGeneral){
 	osMutexAcquire(printMutex, osWaitForever);
 	if (status == osOK);
 	else if (status == osErrorResource)
-		printf("Overflow occured for queue %i\n", numGeneral);
+		printf("OVF %i\n", numGeneral);
 	else
-		printf("Unkown status for queue %i\n", numGeneral);
+		printf("US %i\n", numGeneral);
 	osMutexRelease(printMutex);
 }
 
 void sendMessage(char *msg, uint8_t targetId){
-	osStatus_t status = osMessageQueuePut(commandQueue[targetId], &msg, MSG_PRIO, TIMEOUT);
-	checkStatus(status, targetId);
+	int tryNum = 1;
+	osStatus_t status = osErrorResource;
+	osMutexAcquire(sendMutex, osWaitForever);
+	while(status != osOK){
+		status = osMessageQueuePut(commandQueue[targetId], &msg, MSG_PRIO, TIMEOUT);
+		checkStatus(status, targetId);
+		//if(tryNum > 1)
+			//printf("try num %i", tryNum);
+		tryNum++;
+	}
+	osMutexRelease(sendMutex);
 }
 
 void createMessage(char* msg, int curGeneral){
@@ -75,7 +94,7 @@ void createMessage(char* msg, int curGeneral){
 	strcpy(newMsg, strGeneral);
 	strcat(newMsg, ":");
 	strcat(newMsg, msg);
-	printf("loop msg: %s\n", newMsg);
+	//printf("loop msg: %s\n", newMsg);
 	strcpy(msg, newMsg);
 	free(newMsg);
 }
@@ -91,12 +110,15 @@ void broadcast(char command, uint8_t sender) {
 	char *msg;
 	msg = &command;
 	createMessage(msg, sender);
-	printf("broadcast msg: %s\n", msg);
-	for (int numGeneral; numGeneral<total_generals; numGeneral++){
+	printf("broadcast msg: %s, sender: %i\n", msg, sender);
+	for (uint8_t numGeneral = 0; numGeneral<total_generals; numGeneral++){
 		if (numGeneral != sender){
+			//osDelay(100);
+			//printf("numGeneral %i\n", numGeneral);
 			sendMessage(msg, numGeneral);
 		}
 	}
+	// TODO: add something to wait for last to finish
 }
 
 int checkMessage(char* msg, int* doNotSend){
@@ -123,23 +145,26 @@ int checkMessage(char* msg, int* doNotSend){
   */
 void general(void *idPtr) {
 	uint8_t id = *(uint8_t *)idPtr;
+	char *rcvd_msg;
 	// superloop for thread
+	// TODO add loyal/traitor functionality
 	while(1){
-		if (id == 1){ 
-			char *rcvd_msg;
 			osStatus_t status = osMessageQueueGet(commandQueue[id], &rcvd_msg, NULL, osWaitForever);
 			
 			if (status == osOK){
-				printf("os ok, msg: %s\n", rcvd_msg);
+				printf("hehe");
+				// printf("os ok, msg: %s\n", rcvd_msg);
 				int* doNotSend = (int*)malloc(MAX_GENERALS*sizeof(uint16_t));
 				int doNotSendSize = checkMessage(rcvd_msg, doNotSend);
+				if (doNotSendSize - 1 == total_generals && id == reporterGeneral)
+					printf("%s\n", rcvd_msg);
 				
 				for (int numGeneral = 0; numGeneral < total_generals; ++numGeneral){
 					bool found = false;
 					if (numGeneral == id)
 						found = true;
 					
-					uint16_t i = 0;
+					uint16_t i = 0; 
 					while (!found && i < doNotSendSize){
 						if (numGeneral == doNotSend[i])
 							found = true;
@@ -149,13 +174,12 @@ void general(void *idPtr) {
 					if (!found){
 						// rcvd_msg = "0:A";
 						createMessage(rcvd_msg, numGeneral);
-						printf("msg created: %s\n", rcvd_msg);
+						//printf("msg created: %s\n", rcvd_msg);
 						sendMessage(rcvd_msg, numGeneral);
-						printf("sending msg, id:%i\n", numGeneral);
+						//printf("sending msg, id:%i\n", numGeneral);
 					}
 				}
 				
 			}
-		}
 	}
 }
