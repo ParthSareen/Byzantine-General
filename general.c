@@ -16,6 +16,7 @@
 osMessageQueueId_t* commandQueue;
 uint8_t total_generals;
 uint8_t reporterGeneral;
+uint8_t numTraitors;
 osMutexId_t printMutex;
 osMutexId_t sendMutex;
 char* answerArray[100];
@@ -30,7 +31,7 @@ char* answerArray[100];
 bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	total_generals = nGeneral;
 	reporterGeneral = reporter;
-	int numTraitors = 0;
+	numTraitors = 0;
 	// naive count
 	for (int i = 0; i< total_generals; ++i)
 		if (!loyal[i])
