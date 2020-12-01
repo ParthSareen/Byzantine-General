@@ -61,44 +61,8 @@ void checkStatus(osStatus_t status, int numGeneral){
 		printf("Unkown status for queue %i\n", numGeneral);
 	osMutexRelease(printMutex);
 }
-/** This function performs the initial broadcast to n-1 generals.
-  * It should wait for the generals to finish before returning.
-  * Note that the general sending the command does not participate
-  * in the OM algorithm.
-  * command: either 'A' or 'R'
-  * sender: general sending the command to other n-1 generals
-  */
-void broadcast(char command, uint8_t sender) {
-	for (int numGeneral; numGeneral<total_generals; numGeneral++){
-		if (numGeneral != sender){
-			osStatus_t status = osMessageQueuePut(commandQueue[numGeneral], &command, MSG_PRIO, TIMEOUT);
-			checkStatus(status, numGeneral);
-			osMutexAcquire(printMutex, osWaitForever);
-			osMutexRelease(printMutex);
-		}
-	}
-}
 
-int checkMessage(char* msg, int* doNotSend){
-	// TODO: check the max size of the array
-	//printf("msg: %s\n", msg);
-	// int doNotSend[MAX_GENERALS];
-	int lastNum = 0;
-	int msgLength = sizeof(msg)/sizeof(msg[0])+1;
-	//printf("length: %i\n", msgLength);
-	for (int charNum = 0; charNum < msgLength; charNum++){
-		if (msg[charNum] >= '0' && msg[charNum] <= '9'){
-			//printf("converted %c", msg[charNum]);
-			doNotSend[lastNum] = msg[charNum] - '0';
-			lastNum++;
-		}
-	}
-	
-	// printf("done conversion");
-	return lastNum;
-}
-
-void sendMessage(char msg, uint8_t targetId){
+void sendMessage(char *msg, uint8_t targetId){
 	osStatus_t status = osMessageQueuePut(commandQueue[targetId], &msg, MSG_PRIO, TIMEOUT);
 	checkStatus(status, targetId);
 }
@@ -111,8 +75,44 @@ void createMessage(char* msg, int curGeneral){
 	strcpy(newMsg, strGeneral);
 	strcat(newMsg, ":");
 	strcat(newMsg, msg);
-	printf("msg created: %s", newMsg);
+	printf("loop msg: %s\n", newMsg);
+	strcpy(msg, newMsg);
+	free(newMsg);
 }
+
+/** This function performs the initial broadcast to n-1 generals.
+  * It should wait for the generals to finish before returning.
+  * Note that the general sending the command does not participate
+  * in the OM algorithm.
+  * command: either 'A' or 'R'
+  * sender: general sending the command to other n-1 generals
+  */
+void broadcast(char command, uint8_t sender) {
+	char *msg;
+	msg = &command;
+	createMessage(msg, sender);
+	printf("broadcast msg: %s\n", msg);
+	for (int numGeneral; numGeneral<total_generals; numGeneral++){
+		if (numGeneral != sender){
+			sendMessage(msg, numGeneral);
+		}
+	}
+}
+
+int checkMessage(char* msg, int* doNotSend){
+	int lastNum = 0;
+	int msgLength = sizeof(msg)/sizeof(msg[0])+1;
+	//printf("length: %i\n", msgLength);
+	for (int charNum = 0; charNum < msgLength; charNum++){
+		if (msg[charNum] >= '0' && msg[charNum] <= '9'){
+			//printf("converted %c", msg[charNum]);
+			doNotSend[lastNum] = msg[charNum] - '0';
+			lastNum++;
+		}
+	}
+	return lastNum;
+}
+
 
 /** Generals are created before each test and deleted after each
   * test.  The function should wait for a value from broadcast()
@@ -126,13 +126,13 @@ void general(void *idPtr) {
 	// superloop for thread
 	while(1){
 		if (id == 1){ 
-			char rcvd_msg;
+			char *rcvd_msg;
 			osStatus_t status = osMessageQueueGet(commandQueue[id], &rcvd_msg, NULL, osWaitForever);
 			
 			if (status == osOK){
-				printf("os ok\n");
+				printf("os ok, msg: %s\n", rcvd_msg);
 				int* doNotSend = (int*)malloc(MAX_GENERALS*sizeof(uint16_t));
-				int doNotSendSize = checkMessage(&rcvd_msg, doNotSend);
+				int doNotSendSize = checkMessage(rcvd_msg, doNotSend);
 				
 				for (int numGeneral = 0; numGeneral < total_generals; ++numGeneral){
 					bool found = false;
@@ -147,7 +147,9 @@ void general(void *idPtr) {
 					}
 					
 					if (!found){
-						createMessage(&rcvd_msg, numGeneral);
+						// rcvd_msg = "0:A";
+						createMessage(rcvd_msg, numGeneral);
+						printf("msg created: %s\n", rcvd_msg);
 						sendMessage(rcvd_msg, numGeneral);
 						printf("sending msg, id:%i\n", numGeneral);
 					}
