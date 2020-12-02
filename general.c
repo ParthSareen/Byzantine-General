@@ -21,7 +21,7 @@ uint8_t numTraitors;
 osSemaphoreId_t barrierSem;
 osMutexId_t printMutex;
 osMutexId_t sendMutex;
-char *msgArray[MAX_GENERALS] = {0};
+char *msgArray[MAX_GENERALS];
 
 /** Record parameters and set up any OS and other resources
   * needed by your general() and broadcast() functions.
@@ -38,6 +38,8 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	sendMutex = osMutexNew(NULL);
 	printMutex = osMutexNew(NULL);
 	
+	for (int i = 0; i < total_generals; ++i)
+		msgArray[i] = "";
 	// naive count
 	for (int i = 0; i< total_generals; ++i)
 		if (!loyal[i])
@@ -54,7 +56,7 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	}
 	// TODO: check if we need to have queue for commander
 	for (int i; i<nGeneral; ++i){
-		commandQueue[i] = osMessageQueueNew(QUEUE_SIZE, sizeof(uint32_t), NULL);
+		commandQueue[i] = osMessageQueueNew(QUEUE_SIZE, 8, NULL);
 		// printf("Q%i\n", i);
 	}
 	return true; 
@@ -77,12 +79,17 @@ void checkStatus(osStatus_t status, int numGeneral){
 		printf("US %i\n", numGeneral);
 }
 
+void traitorAlter(char* msg, uint8_t target){
+	msg[strlen(msg)-1] = 'A';
+}
+
 
 void sendMessage(char *msg, uint8_t targetId){
-	osMutexAcquire(sendMutex, osWaitForever);
+	char *newMsg = malloc(strlen(msg));
+	strcpy(newMsg, msg);
 	osStatus_t status = osMessageQueuePut(commandQueue[targetId], &msg, MSG_PRIO, TIMEOUT);
 	checkStatus(status, targetId);
-	osMutexRelease(sendMutex);
+	free(newMsg);
 }
 
 
@@ -127,7 +134,7 @@ void broadcast(char command, uint8_t sender) {
 	for (uint8_t numGeneral = 0; numGeneral<total_generals; numGeneral++){
 		if (numGeneral != sender){
 			sendMessage(msg, numGeneral);
-			printf("sent to %i, msg: %s\n", numGeneral, msg);
+			//printf("sent to %i, msg: %s\n", numGeneral, msg);
 		}
 	}
 	//printf("hello\n");
@@ -137,7 +144,9 @@ void broadcast(char command, uint8_t sender) {
 	// TODO: add something to wait for last to finish
 }
 
-
+void om(){}
+	
+	
 /** Generals are created before each test and deleted after each
   * test.  The function should wait for a value from broadcast()
   * and then use the OM algorithm to solve the Byzantine General's
@@ -152,29 +161,31 @@ void general(void *idPtr) {
 	uint32_t count = 0;
 	// superloop for thread
 	// TODO add loyal/traitor functionality
+	char* send = malloc(strlen(msgArray[id])+4);
 	while(1){
-		//msgArray[id];
 		status = osMessageQueueGet(commandQueue[id], &msgArray[id], NULL, osWaitForever);
 		if (status == osOK){
 			osMutexAcquire(printMutex, osWaitForever);
-			printf("id: %i msg: %s\n", id,  msgArray[id]);
+			printf("id: %i rcvd_msg: %s\n", id,  msgArray[id]);
 			osMutexRelease(printMutex);
 			
 			int* doNotSend = (int*)malloc(MAX_GENERALS*sizeof(uint16_t));
 			int doNotSendSize = checkMessage(msgArray[id], doNotSend);
-			//doNotSendSize-1 < numTraitors
-			char* send = malloc(strlen(msgArray[id])+3);
+			
 			strcpy(send, msgArray[id]);
 			if(doNotSendSize-1 < numTraitors){
 				createMessage(send, id);
+				osMutexAcquire(printMutex, osWaitForever);
+				printf("id: %i, dns: %i, msg: %s\n", id, doNotSendSize, send);
+				osMutexRelease(printMutex);
+				//traitorAlter(send, 1);
 				// n-1 loop
 				for (int numGeneral = 0; numGeneral < total_generals; numGeneral++){
 					bool found = false;
 					if (numGeneral == id)
 						found = true;
 					
-					uint16_t i = 0; 
-					//printf("t%i\n", total_generals);
+					uint16_t i = 0;
 					while (!found && i < doNotSendSize){
 						if (numGeneral == doNotSend[i]){
 							found = true;
@@ -183,9 +194,14 @@ void general(void *idPtr) {
 					}
 					if (!found){
 						osMutexAcquire(printMutex, osWaitForever);
-						sendMessage(send, numGeneral);
+						//sendMessage(send, numGeneral);
+						strcpy(msgArray[id], send);
+						free(send);
+						osStatus_t status = osMessageQueuePut(commandQueue[numGeneral], &msgArray[id], MSG_PRIO, TIMEOUT);
+						if (status != osOK)
+							printf("put wrong");
 						printf("%i -> %i\n", id,  numGeneral);
-						printf("diff %s %s\n", send, msgArray[id]);
+						printf("sending %s\n", msgArray[id]);
 						osMutexRelease(printMutex);
 					}
 				}
@@ -195,4 +211,5 @@ void general(void *idPtr) {
 		}
 		count++;
 	}
+	free(send);
 }
