@@ -23,6 +23,13 @@ osMutexId_t printMutex;
 osMutexId_t sendMutex;
 char *msgArray[MAX_GENERALS];
 
+osMessageQueueId_t (*globalQueues)[MAX_GENERALS][3];
+typedef struct {
+	char command;
+	uint8_t *visited[MAX_GENERALS];
+} msg_t;
+
+
 /** Record parameters and set up any OS and other resources
   * needed by your general() and broadcast() functions.
   * nGeneral: number of generals
@@ -38,6 +45,7 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	sendMutex = osMutexNew(NULL);
 	printMutex = osMutexNew(NULL);
 	
+	// TODO: remove1
 	for (int i = 0; i < total_generals; ++i)
 		msgArray[i] = "";
 	// naive count
@@ -49,6 +57,23 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 		//return false;
 		
 	// TODO: check if size could be 2
+	/*
+	for(int i = 0; i < MAX_GENERALS; i++){
+		//(*globalQueues[i]) = (osMessageQueueId_t*)malloc(MAX_GENERALS*sizeof(uint8_t));
+		for(int j = 0; j < numTraitors; j++){
+			(*globalQueues[i][j]) = osMessageQueueNew(QUEUE_SIZE, 8, NULL);
+			//(osMessageQueueId_t*)malloc(MAX_GENERALS*sizeof(uint8_t));
+		}
+	}
+	uint8_t val[] = {2}; 
+	msg_t temp = {'A', val};
+	osStatus_t status = osMessageQueuePut(globalQueues[3][1], &temp, MSG_PRIO, TIMEOUT);
+	if(status != osOK)
+		printf("cant access");
+	msg_t got = {0};
+	osMessageQueueGet(globalQueues[3][1], &got, MSG_PRIO, TIMEOUT);
+	printf("msg: %c", got.command);
+	*/
 	commandQueue = (osMessageQueueId_t*)malloc(MAX_GENERALS*sizeof(uint8_t));
 	if (commandQueue == NULL){
 		printf("malloc for command queue failed");
@@ -129,11 +154,17 @@ int checkMessage(char* msg, int* doNotSend){
 void broadcast(char command, uint8_t sender) {
 	char *msg;
 	msg = &command;
+	// possibly goes wrong here minus the sender and 8
+	uint8_t val[MAX_GENERALS] = {sender, 2}; 
+	msg_t sendMsg = {command, val};
 	createMessage(msg, sender);
-	printf("broadcast msg: %s, sender: %i\n", msg, sender);
+	printf("broadcast msg: %c, sender: %i\n", command, sender);
 	for (uint8_t numGeneral = 0; numGeneral<total_generals; numGeneral++){
 		if (numGeneral != sender){
-			sendMessage(msg, numGeneral);
+			osStatus_t status = osMessageQueuePut(commandQueue[numGeneral], &('A'), MSG_PRIO, TIMEOUT);
+			if (status != osOK)
+				printf("not ok");
+			//sendMessage(msg, numGeneral);
 			//printf("sent to %i, msg: %s\n", numGeneral, msg);
 		}
 	}
@@ -144,7 +175,9 @@ void broadcast(char command, uint8_t sender) {
 	// TODO: add something to wait for last to finish
 }
 
-void om(){}
+void om(msg_t msg, uint8_t id, uint8_t m){
+	
+}
 	
 	
 /** Generals are created before each test and deleted after each
@@ -157,13 +190,24 @@ void om(){}
 void general(void *idPtr) {
 	osSemaphoreAcquire(barrierSem, osWaitForever);
 	uint8_t id = *(uint8_t *)idPtr;
-	osStatus_t status;
+	
+	while(1){
+		char msg;
+		osStatus_t status = osMessageQueueGet(commandQueue[id], &msg, NULL, osWaitForever);
+		if (status == osOK){
+			osMutexAcquire(printMutex, osWaitForever);
+			printf("id: %i rcvd_msg: %c\n", id, msg);
+			osMutexRelease(printMutex);
+			//om(msg, id, numTraitors);
+	}
+}
+		
 	uint32_t count = 0;
 	// superloop for thread
 	// TODO add loyal/traitor functionality
 	char* send = malloc(strlen(msgArray[id])+4);
 	while(1){
-		status = osMessageQueueGet(commandQueue[id], &msgArray[id], NULL, osWaitForever);
+		osStatus_t status = osMessageQueueGet(commandQueue[id], &msgArray[id], NULL, osWaitForever);
 		if (status == osOK){
 			osMutexAcquire(printMutex, osWaitForever);
 			printf("id: %i rcvd_msg: %s\n", id,  msgArray[id]);
