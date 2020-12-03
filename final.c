@@ -47,7 +47,7 @@ void stopGenerals(void) {
 
 void testCases(void *arguments) {
 	// change back to 0
-	for(int i=0; i<N_TEST; i++) {
+	for(int i=3; i<N_TEST; i++) {
 		printf("\ntest case %d\n", i);
 		if(setup(tests[i].n, tests[i].loyal, tests[i].reporter)) {
 			startGenerals(tests[i].n);
@@ -60,6 +60,7 @@ void testCases(void *arguments) {
 			printf(" setup failed\n");
 		}
 	}
+	osDelay(1000);
 	printf("\ndone\n");
 }
 
