@@ -66,6 +66,7 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 		commandQueue[i] = osMessageQueueNew(QUEUE_SIZE, sizeof(msg_t), NULL);
 		//printf("Q%i\n", i);
 	}
+	
 	return true; 
 }
 
@@ -171,61 +172,90 @@ void broadcast(char command, uint8_t sender) {
 }
 
 void om(msg_t msg, uint8_t id, uint8_t m){
+	if (m == 0){
+		if (id == reporterGeneral){
+				osMutexAcquire(printMutex, osWaitForever);
+				printf("id: %i, visited: %s, m: %i\n", id, msg.visited, m);
+				osMutexRelease(printMutex);
+			}
+		else return;
+	}
 	if (m > 0){
 		int* doNotSend = (int*)malloc(MAX_GENERALS*sizeof(uint16_t));
 		int doNotSendSize = checkMessage(msg.visited, doNotSend);
-		if(doNotSendSize - 1 == numTraitors){
+		/*if(doNotSendSize - 1 == numTraitors){
 			if (id == reporterGeneral){
 				osMutexAcquire(printMutex, osWaitForever);
 				printf("id: %i, visited: %s, m: %i\n", id, msg.visited, m);
 				osMutexRelease(printMutex);
 			}
-		}
-		if(doNotSendSize-1 < numTraitors){
-			char *tmp = msg.visited;
-			createMessage(&tmp, id);
-			bool loyal = loyalGenerals[id];
-			if (!loyal)
-				traitorAlter(tmp, id);
-			strncpy(msg.visited, tmp, 7);
-			for (int numGeneral = 0; numGeneral < total_generals; numGeneral++){
-				bool found = false;
-				if (numGeneral == id)
+		}*/
+		// loop to check if seen
+		//if(doNotSendSize-1 < numTraitors){
+		char *tmp = msg.visited;
+		createMessage(&tmp, id);
+		bool loyal = loyalGenerals[id];
+		if (!loyal)
+			traitorAlter(tmp, id);
+		strncpy(msg.visited, tmp, 7);
+		
+		// send msgs
+		for (int numGeneral = 0; numGeneral < total_generals; numGeneral++){
+			bool found = false;
+			if (numGeneral == id)
+				found = true;
+		
+			uint16_t i = 0;
+			while (!found && i < doNotSendSize){
+				int tmp = *(doNotSend+i);
+				if (numGeneral == tmp)
 					found = true;
-			
-				uint16_t i = 0;
-				while (!found && i < doNotSendSize){
-					int tmp = *(doNotSend+i);
-					if (numGeneral == tmp)
-						found = true;
-					i++;
-				}
-				
-				if (!found){
-					if (m == 1){
-						osStatus_t status;
-
-						osMutexAcquire(printMutex, osWaitForever);
-						status = osMessageQueuePut(commandQueue[numGeneral], &msg, MSG_PRIO, TIMEOUT);
-						uint32_t count = osMessageQueueGetCount(commandQueue[numGeneral]);
-						if (status != osOK)
-							printf("put wrong, count: %i, msg: %s\n", count, msg.visited);
-						//printf("%i -> %i, %s, m:%i\n", id,  numGeneral, msg.visited, m);
-						//printf("sending %s\n", msg.visited);
-						osMutexRelease(printMutex);
-					}
-					om(msg, numGeneral, m-1);
-					
-				}
+				i++;
 			}
-			free(doNotSend);
+			
+			if (!found){
+				osMutexAcquire(printMutex, osWaitForever);
+				osStatus_t status = osMessageQueuePut(commandQueue[numGeneral], &msg, MSG_PRIO, TIMEOUT);
+				uint32_t count = osMessageQueueGetCount(commandQueue[numGeneral]);
+				if (status != osOK)
+					printf("put wrong, count: %i, msg: %s\n", count, msg.visited);
+				//printf("%i -> %i, %s, m:%i\n", id,  numGeneral, msg.visited, m);
+				//printf("sending %s\n", msg.visited);
+				osMutexRelease(printMutex);
+			}
+			//osStatus_t status = osMessageQueuePut(commandQueue[numGeneral], &msg, MSG_PRIO, TIMEOUT);
+			//om(msg, numGeneral, m-1);
+		}
+		
+		// get messages
+		for (int numGeneral = 0; numGeneral < total_generals; numGeneral++){
+			bool found = false;
+			if (numGeneral == id)
+				found = true;
+		
+			uint16_t i = 0;
+			while (!found && i < doNotSendSize){
+				int tmp = *(doNotSend+i);
+				if (numGeneral == tmp)
+					found = true;
+				i++;
+			}
+			msg_t newMsg = { .command=0, .visited="" };
+			if (!found){
+				osMutexAcquire(printMutex, osWaitForever);
+				osStatus_t status = osMessageQueueGet(commandQueue[numGeneral], &newMsg, MSG_PRIO, TIMEOUT);
+				uint32_t count = osMessageQueueGetCount(commandQueue[numGeneral]);
+				if (status != osOK)
+					printf("got wrong, count: %i, msg: %s\n", count, newMsg.visited);
+				osMutexRelease(printMutex);
+			}
+			om(newMsg, numGeneral, m-1);
+		}
+			//free(doNotSend);
 			
 		}
 			
 	}
-	else
-		osSemaphoreRelease(finishedSem);
-}
 	
 	
 /** Generals are created before each test and deleted after each
@@ -244,6 +274,8 @@ void general(void *idPtr) {
 		osStatus_t status = osMessageQueueGet(commandQueue[id], &msg, NULL, osWaitForever);
 		if (status == osOK){
 			om(msg, id, numTraitors);
+			// add semaphore shit
+			osDelay(10000);
 		}
 	}
 }
