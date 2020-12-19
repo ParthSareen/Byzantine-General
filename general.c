@@ -75,6 +75,13 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
   * dynamically allocated by setup().
   */
 void cleanup(void) {
+	for (int i =0; i< MAX_GENERALS; i++){
+		osMessageQueueDelete(commandQueue[i]);
+	}
+	osSemaphoreDelete(barrierSem);
+	osSemaphoreDelete(finishedSem);
+	osMutexDelete(printMutex);
+	osMutexDelete(sendMutex);
 	free(commandQueue);
 }
 
@@ -174,10 +181,10 @@ void broadcast(char command, uint8_t sender) {
 void om(msg_t msg, uint8_t id, uint8_t m){
 	if (m == 0){
 		if (id == reporterGeneral){
-				osMutexAcquire(printMutex, osWaitForever);
-				printf("id: %i, visited: %s, m: %i\n", id, msg.visited, m);
-				osMutexRelease(printMutex);
-			}
+			osMutexAcquire(printMutex, osWaitForever);
+			printf("id: %i, visited: %s, m: %i\n", id, msg.visited, m);
+			osMutexRelease(printMutex);
+		}
 		else return;
 	}
 	if (m > 0){
@@ -217,17 +224,18 @@ void om(msg_t msg, uint8_t id, uint8_t m){
 				osMutexAcquire(printMutex, osWaitForever);
 				osStatus_t status = osMessageQueuePut(commandQueue[numGeneral], &msg, MSG_PRIO, TIMEOUT);
 				uint32_t count = osMessageQueueGetCount(commandQueue[numGeneral]);
-				if (status != osOK)
+				if (status != osOK){
 					printf("put wrong, count: %i, msg: %s\n", count, msg.visited);
-				//printf("%i -> %i, %s, m:%i\n", id,  numGeneral, msg.visited, m);
-				//printf("sending %s\n", msg.visited);
+					//printf("%i -> %i, %s, m:%i\n", id,  numGeneral, msg.visited, m);
+					//printf("sending %s\n", msg.visited);
+				}
 				osMutexRelease(printMutex);
 			}
 			//osStatus_t status = osMessageQueuePut(commandQueue[numGeneral], &msg, MSG_PRIO, TIMEOUT);
 			//om(msg, numGeneral, m-1);
 		}
 		
-		// get messages
+		// Get messages
 		for (int numGeneral = 0; numGeneral < total_generals; numGeneral++){
 			bool found = false;
 			if (numGeneral == id)
@@ -243,13 +251,15 @@ void om(msg_t msg, uint8_t id, uint8_t m){
 			msg_t newMsg = { .command=0, .visited="" };
 			if (!found){
 				osMutexAcquire(printMutex, osWaitForever);
+				// getting the message here should be the same as what was sent
 				osStatus_t status = osMessageQueueGet(commandQueue[numGeneral], &newMsg, MSG_PRIO, TIMEOUT);
+				//printf("msg got: %s\n", newMsg.visited);
 				uint32_t count = osMessageQueueGetCount(commandQueue[numGeneral]);
 				if (status != osOK)
 					printf("got wrong, count: %i, msg: %s\n", count, newMsg.visited);
 				osMutexRelease(printMutex);
+				om(newMsg, numGeneral, m-1);
 			}
-			om(newMsg, numGeneral, m-1);
 		}
 			//free(doNotSend);
 			
@@ -271,11 +281,18 @@ void general(void *idPtr) {
 	
 	while(1){
 		msg_t msg = { .command=0, .visited="" };
+		//osMutexAcquire(printMutex, osWaitForever);
 		osStatus_t status = osMessageQueueGet(commandQueue[id], &msg, NULL, osWaitForever);
 		if (status == osOK){
+			osMutexAcquire(printMutex, osWaitForever);
+			printf("init msg got: %s, id: %i\n", msg.visited, id);
+			osMutexRelease(printMutex);
 			om(msg, id, numTraitors);
 			// add semaphore shit
 			osDelay(10000);
+		}
+		else{
+			printf("Error on init pull id: %i\n", id);
 		}
 	}
 }
