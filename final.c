@@ -67,7 +67,6 @@ void stopGenerals(void) {
 }
 
 void testCases(void *arguments) {
-	// change back to 0
 	for(int i=0; i<N_TEST; i++) {
 		printf("\ntest case %d\n", i);
 		if(setup(tests[i].n, tests[i].loyal, tests[i].reporter)) {

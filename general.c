@@ -144,7 +144,7 @@ void broadcast(char command, uint8_t sender) {
 	for (int i = 0; i<total_generals; i++){
 		osSemaphoreRelease(barrierSem);
 	}
-
+	// Waits for all generals to finish OM before returning to final.c
 	for (int i = 0; i < total_generals-1; i++){
 		osSemaphoreAcquire(finishedSem, osWaitForever);
 	}
