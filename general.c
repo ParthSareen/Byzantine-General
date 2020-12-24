@@ -24,12 +24,8 @@ osMutexId_t printMutex;
 osSemaphoreId_t finishedSem;
 
 
-/** Record parameters and set up any OS and other resources
-  * needed by your general() and broadcast() functions.
-  * nGeneral: number of generals
-  * loyal: array representing loyalty of corresponding generals
-  * reporter: general that will generate output
-  * return true if setup successful and n > 3*m, false otherwise
+/*
+* Sets up all necessary variables for algorithm to run
   */
 bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 	total_generals = nGeneral;
@@ -61,8 +57,8 @@ bool setup(uint8_t nGeneral, bool loyal[], uint8_t reporter) {
 }
 
 
-/** Delete any OS resources created by setup() and free any memory
-  * dynamically allocated by setup().
+/** 
+ * Deletes any resources used and resets variables
   */
 void cleanup(void) {
 	for (int i =0; i< 3; i++){
@@ -106,12 +102,8 @@ int checkMessage(char* msg, int* doNotSend){
 }
 
 
-/** This function performs the initial broadcast to n-1 generals.
-  * It should wait for the generals to finish before returning.
-  * Note that the general sending the command does not participate
-  * in the OM algorithm.
-  * command: either 'A' or 'R'
-  * sender: general sending the command to other n-1 generals
+/** 
+ * Performs the initial broadcast from the commander to the other generals
   */
 
 void broadcast(char command, uint8_t sender) {
@@ -151,6 +143,8 @@ void broadcast(char command, uint8_t sender) {
 	return;
 }
 
+
+// The OM algorithm which runs recursively
 void om(char* msg, uint8_t id, uint8_t m){
 	if (m == 0){
 		if (id == reporterGeneral){
@@ -232,12 +226,8 @@ void om(char* msg, uint8_t id, uint8_t m){
 	}
 	
 	
-/** Generals are created before each test and deleted after each
-  * test.  The function should wait for a value from broadcast()
-  * and then use the OM algorithm to solve the Byzantine General's
-  * Problem.  The general designated as reporter in setup()
-  * should output the messages received in OM(0).
-  * idPtr: pointer to general's id number which is in [0,n-1]
+/** 
+ * A general node which is created through final.c
   */
 void general(void *idPtr) {
 	osSemaphoreAcquire(barrierSem, osWaitForever);
